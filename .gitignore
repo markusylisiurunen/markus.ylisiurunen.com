@@ -30,3 +30,6 @@ yarn-error.log*
 .env.production.local
 
 .vercel
+
+# ignore next-mdx-enhanced files
+.mdx-data
