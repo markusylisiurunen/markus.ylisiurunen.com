@@ -21,6 +21,7 @@ const theme = {
   colors: {
     bg: {
       main: "#FFFFFF",
+      filename: "hsl(240, 16%, 96%)",
       subtle: "hsl(240, 24%, 94%)",
       hover: "hsl(240, 8%, 98%)",
     },
@@ -35,13 +36,14 @@ const theme = {
     border: {
       neutral: "#DFE1E2",
       subtle: "#EFF0F1",
+      code: "#EFF0F1",
     },
   },
 
   space: Array.from({ length: 64 })
     .fill(0)
     .map((_, i) => i * 4),
-};
+}
 
 theme.typography = {
   baseFontSize: 16,
@@ -57,6 +59,6 @@ theme.typography = {
     { name: "Inter", styles: ["400", "500", "600", "700"] },
     { name: "Lora", styles: ["400", "400i", "500", "500i"] },
   ],
-};
+}
 
-export default theme;
+export default theme
