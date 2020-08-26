@@ -157,14 +157,25 @@ const MNISTCanvas = ({ width, height }) => {
   useEffect(() => {
     if (!pixels) return
 
-    // TODO: fetch the probabilities from the server
-    let probs = Array.from({ length: 10 })
-      .fill(null)
-      .map(() => Math.random())
+    /**
+     * Method for fetching the predictions from the API.
+     */
+    async function predict() {
+      const res = await fetch(
+        process.env.UNDERSTANDING_GRADIENT_DESCENT_MNIST_URL,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(pixels),
+        }
+      )
 
-    probs = probs.map((prob) => prob / probs.reduce((s, v) => s + v, 0))
+      const probabilities = await res.json()
 
-    setProbabilities(getProbabilities((number) => probs[number]))
+      setProbabilities(getProbabilities((number) => probabilities[number]))
+    }
+
+    predict().catch((error) => console.log(error))
   }, [pixels])
 
   /**
