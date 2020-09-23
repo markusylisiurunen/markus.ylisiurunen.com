@@ -198,7 +198,7 @@ const MNISTCanvas = ({ width, height }) => {
     <Flex
       sx={{
         alignItems: "flex-start",
-        marginY: 6,
+        marginY: 16,
       }}
     >
       <Box
