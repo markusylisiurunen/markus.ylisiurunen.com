@@ -12,4 +12,10 @@ module.exports = withMdxEnhanced({
   fileExtensions: ["mdx"],
   remarkPlugins: [remarkCapitalize, remarkCodeTitles],
   rehypePlugins: [rehypeSlug, rehypeAutolinkHeadings, rehypePrism],
-})()
+})({
+  env: {
+    UNDERSTANDING_GRADIENT_DESCENT_MNIST_URL:
+      process.env.UNDERSTANDING_GRADIENT_DESCENT_MNIST_URL ||
+      "https://understanding-gradient-descent-mnist-neural-netwo-rak6xw4ywa-ew.a.run.app",
+  },
+})

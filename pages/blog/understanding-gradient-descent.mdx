@@ -1,0 +1,805 @@
+---
+title: "Understanding Gradient Descent for Neural Networks"
+published_at: 2020-09-23
+---
+
+import Cite from "../../src/components/Cite"
+import Image from "../../src/components/Image"
+import Latex from "../../src/components/Latex"
+import Reference from "../../src/components/Reference"
+
+import MNISTCanvas from "../../src/components/MNISTCanvas"
+
+<!-- Content -->
+
+I spent the last year trying to digest a lot of new information at Aalto
+University while doing my master's degree in Machine Learning and Artificial
+Intelligence. Even though the topics varied a lot from pure math to statistical
+modeling with Stan to implementing deep neural networks for machine translation,
+I feel like I didn't quite have enough time to simply stop and experiment with
+the topics I was studying.
+
+I decided to go back to the fundamentals and work up from there. I feel like the
+natural place to start from are the basics of neural networks, more specifically
+training them with gradient descent. It's quite interesting that the mechanism
+for training very powerful neural networks is so simple yet so powerful for even
+the most state-of-the-art neural networks.
+
+In this blog post, I will try to explain the intuition behind gradient descent,
+what gradient descent is, what it is used for and how we might go around
+implementing it from stratch.
+
+## Resources
+
+Below is a list of related resources that you can take a look at.
+
+<!-- prettier-ignore -->
+- Source code: [markusylisiurunen/blog-understanding-gradient-descent](https://github.com/markusylisiurunen/blog-understanding-gradient-descent)
+- Jupyter Notebook: [Google Colab](https://colab.research.google.com/github/markusylisiurunen/blog-understanding-gradient-descent/blob/master/network.ipynb)
+
+## Table of contents
+
+1. [The problem](#the-problem)
+2. [Gradient Descent for Linear Regression](#gradient-descent-for-linear-regression)
+3. [Neural Networks](#neural-networks)
+   1. [Topology of a Neural Network](#topology-of-a-neural-network)
+   2. [Batch Training](#batch-training)
+   3. [Building Blocks](#building-blocks)
+      1. [Linear Transformation](#linear-transformation)
+      2. [Activation Function](#activation-function)
+      3. [Loss Function](#loss-function)
+   4. [Composition](#composition)
+   5. [Training](#training)
+4. [MNIST Dataset](#mnist-dataset)
+5. [References](#references)
+
+## The problem
+
+So, before trying to find a solution, we have to understand the problem. Our
+goal is to somehow learn from given data points and find a somewhat optimal set
+of parameters that describe the data reasonably well. In other words, our goal
+is to learn from data points in such a way that it generalizes to unseen data
+points in the future.
+
+It's easier to understand this with an example. So, let's demonstrate this with
+linear regression. First, we need our data.
+
+```python:create-linear-regression-data.py
+def create_linear_regression_data():
+    x = np.arange(0, 10, 1)
+    y = x + np.random.normal(0, 1, 10)
+
+    return (x, y)
+
+linear_regression_data = create_linear_regression_data()
+
+plt.scatter(
+    linear_regression_data[0],
+    linear_regression_data[1],
+)
+```
+
+The results from running the code above should look something like the scatter
+plot below.
+
+<Image
+  src="/media/blog/understanding-gradient-descent/linear-regression-data.png"
+  alt="Figure 1. Generated data for linear regression."
+/>
+
+The data is generated from the equation of a line with some added Gaussian noise
+to make it look somewhat random.
+
+<Latex block>{`f(x) = kx + b + z`}</Latex>
+
+<Latex block>{`z \\sim N(0, 1)`}</Latex>
+
+Now, we are interested in trying to find the optimal line that would represent
+the data points the best. Let's try to do this by hand first.
+
+<p>
+  A line can be represented by two parameters, <Latex>k</Latex> and{" "}
+  <Latex>b</Latex>. We need some sort of an initial guess for these. Let's say
+  we think <Latex>k = 0.5</Latex> and <Latex>b = 1</Latex> could be somewhat
+  close. We can now plot the line.
+</p>
+
+<Image
+  src="/media/blog/understanding-gradient-descent/linear-regression-guess-1.png"
+  alt="Figure 2. The first guess for the line's parameters."
+/>
+
+As we can see, it's not quite there yet but it's not too far away either. Are we
+happy with the fit? No. So, we need to tune the parameters a bit in the right
+direction to get it closer to the optimal values.
+
+<p>
+  The equation of a line is probably quite familiar to all of us and we have a
+  good understanding of how the parameters affect the line. Therefore, we can
+  intuitively come up with a better guess. Let's say we think that{" "}
+  <Latex>k = 0.8</Latex> and <Latex>b = 0.5</Latex> would yield a better fit.
+</p>
+
+<Image
+  src="/media/blog/understanding-gradient-descent/linear-regression-guess-2.png"
+  alt="Figure 3. The second guess for the line's parameters."
+/>
+
+That's already much better and it only took us two tries. We could continue to
+iterate on the parameter values and find an even better fit. But for now, we'll
+consider this to be good enough for the demonstration.
+
+We used an iterative method for finding the values for the parameters. The
+method can be described in four steps.
+
+1. Pick somewhat random values for the parameters <Latex>\theta_1, \theta_2,
+   ..., \theta_n</Latex>.
+2. Visualise how the model fits the data.
+3. Decide which direction the parameters need to be tuned.
+4. Tune each parameter a bit and go back to step 2.
+
+This is essentially the intuition behind what gradient descent is doing. It is
+looking at the _gradients_ of how different parameters in the model affect the
+output, or loss, and tunes the parameters in the direction that makes the
+model's fit better. In other words, it tries to _descent_ to the direction where
+the loss decreases.
+
+There was one critical thing that wasn't quite clear where it came from. How did
+we know which direction we needed to tune the parameters to? It was quite easy
+in the case of a line but what if we had 1000s of parameters in our model. In
+case of a line, the direction was based on our intuitive understanding of the
+equation of a line but could we somehow formulate this into a mathematical form?
+
+## Gradient descent for linear regression
+
+First of all, what does it mean to have a "good fit" to data? In case of linear
+regression, this means that our line passes the data points as close as
+possible. In other words, we would like to minimise the sum of vertical
+distances between the predicted line and the given data points.
+
+This is called the loss function. Its job is to compute the "how bad was the
+prediction" -metric. It can then be used for computing the gradient w.r.t.
+different parameters and the gradient is then used for tuning the parameters.
+
+For linear regression, we can use the simple Mean Square Error (MSE) loss
+function. It is defined as
+
+<Latex block>
+  {`
+  \\begin{aligned}
+    c_{MSE} & = \\frac{1}{n} \\sum_{i = 1}^{n} (y_i - \\hat{y_i})^2 \\\\
+            & = \\frac{1}{n} \\sum_{i = 1}^{n} (y_i - (k x_i + b))^2 \\\\
+            & = \\frac{1}{n} \\sum_{i = 1}^{n} (y_i - k x_i - b)^2
+  \\end{aligned}
+  `}
+</Latex>
+
+<p>
+  where <Latex>n</Latex> is the number of samples, <Latex>{`\\hat{y_i}`}</Latex>{" "}
+  is a target output and <Latex>y_i</Latex> is the predicted output.
+  Effectively, we are just computing the sum of each data point's vertical
+  distance, or residual, to the fitted line.
+</p>
+
+Now, our goal is to minimize this loss as that would mean our line is as close
+to the data points as possible. How do we do that? We compute the gradient of
+the loss with respect to all parameters.
+
+In order to be able to compute the gradient, we need to use the chain rule. As a
+quick reminder, I've written it out below.
+
+<Latex block>{`f(g(x)) = f^{\\prime}(g(x)) g^{\\prime}(x)`}</Latex>
+
+<Latex block>
+  {`\\frac{\\partial z}{\\partial x} = \\frac{\\partial z}{\\partial y} \\frac{\\partial y}{\\partial x}`}
+</Latex>
+
+<p>
+  Now, let's compute the derivative of the MSE loss w.r.t. <Latex>k</Latex>.
+</p>
+
+<Latex block>
+  {`
+  \\begin{aligned}
+    \\frac{\\partial}{\\partial k} c_{MSE}
+        & = \\frac{\\partial}{\\partial k} \\frac{1}{n} \\sum_{i = 1}^{n} (y_i - k x_i - b)^2 \\\\
+        & = \\frac{1}{n} \\sum_{i = 1}^{n} \\frac{\\partial}{\\partial k} (y_i - k x_i - b)^2 \\\\
+        & = \\frac{1}{n} \\sum_{i = 1}^{n} 2 (y_i - k x_i - b) \\cdot -x_i \\\\
+        & = \\frac{-2}{n} \\sum_{i = 1}^{n} x_i (y_i - k x_i - b) \\\\
+        & = \\frac{-2}{n} \\sum_{i = 1}^{n} x_i (y_i - \\hat{y_i})
+  \\end{aligned}
+  `}
+</Latex>
+
+<p>
+  And now let's do the same to compute the derivative of the MSE loss w.r.t.{" "}
+  <Latex>b</Latex>.
+</p>
+
+<Latex block>
+  {`
+  \\begin{aligned}
+    \\frac{\\partial}{\\partial b} c_{MSE}
+        & = \\frac{\\partial}{\\partial b} \\frac{1}{n} \\sum_{i = 1}^{n} (y_i - k x_i - b)^2 \\\\
+        & = \\frac{1}{n} \\sum_{i = 1}^{n} \\frac{\\partial}{\\partial b} (y_i - k x_i - b)^2 \\\\
+        & = \\frac{1}{n} \\sum_{i = 1}^{n} 2 (y_i - k x_i - b) \\cdot -1 \\\\
+        & = \\frac{-2}{n} \\sum_{i = 1}^{n} (y_i - k x_i - b) \\\\
+        & = \\frac{-2}{n} \\sum_{i = 1}^{n} (y_i - \\hat{y_i})
+  \\end{aligned}
+  `}
+</Latex>
+
+This means that we are able to compute the gradient of the loss at any point
+w.r.t. both parameters of the equation. We should now have some understanding of
+the _gradient_ part of gradient descent. Let's move to the _descent_ part next.
+
+We can think of the MSE loss function of linear regression as a surface in
+three-dimensional space. For linear regression, the shape of the loss function
+is a "bowl".
+
+<Image
+  src="/media/blog/understanding-gradient-descent/mse-loss-shape.png"
+  alt="Figure 4. Shape of the MSE loss."
+/>
+
+Figure 4 can be found from
+[Towards Data Science](https://towardsdatascience.com/linear-regression-cost-function-gradient-descent-normal-equations-1d2a6c878e2c)'s
+blog post. This implies that we will always be able to find the optimal values
+for the parameters as there is only one global minimum. The only thing we need
+to do is to somehow get to the point where the loss function has the lowest
+value.
+
+How do we do that? Well, we start at a random point and use the gradient to take
+steps towards the negative direction of the gradient. This way we will be moving
+towards the lowest point of the loss function and eventually find the optimal
+solution.
+
+To visualize this, let's consider the following simple quadratic function
+
+<Latex block>{`g(x) = x^2`}</Latex>
+
+<Image
+  src="/media/blog/understanding-gradient-descent/quadratic-plot.png"
+  alt="Figure 5. Plot of the quadratic function."
+/>
+
+<p>
+  I've picked a single point at <Latex>z = -4</Latex> and visualised the
+  gradient at that point. Our goal is the optimize the hypothetical parameter{" "}
+  <Latex>z</Latex> so that we achieve the minimum of the fictional loss function
+  of <Latex>g(z)</Latex>.
+</p>
+
+<p>
+  We can do this by computing the gradient at <Latex>z</Latex> and stepping in
+  the direction of the negative gradient. So, a single step could be something
+  like
+</p>
+
+<Latex block>{`z_{i + 1} = z_i - \\alpha \\cdot g^{\\prime}(z_i)`}</Latex>
+
+<p>
+  where <Latex>\alpha</Latex> is the learning rate. Take a look at the
+  semi-pseudo-code and the animation below.
+</p>
+
+```python:quadratic-gradient-descent.py
+alpha = 0.05
+z = -4
+
+def do_epoch():
+    grad_at_z = 2 * z
+    z = z - alpha * grad_at_z
+
+for i in range(50):
+    plot()
+    do_epoch()
+```
+
+<Image
+  src="/media/blog/understanding-gradient-descent/quadratic-gradient-descent-animation.gif"
+  alt="Figure 6. Animation of gradient descent for quadratic function."
+/>
+
+The same can be done for linear regression with two parameters. I took the
+pseudo-code above and adapted it for linear regression. The result can be seen
+in Figure 7.
+
+<Image
+  src="/media/blog/understanding-gradient-descent/linear-regression-gradient-descent-animation.gif"
+  alt="Figure 7. Animation of gradient descent for linear regression."
+/>
+
+To summarize gradient descent, I collected the steps required in the list below.
+
+1. Define a loss function.
+2. Compute the gradient of the loss w.r.t. the model's parameters.
+3. Take a small step in the direction of the negative gradient.
+4. Go back to step 2 if epochs left.
+
+## Neural networks
+
+Now that we are familiar with the intuition of gradient descent, let's see how
+it can be applied to neural networks. In this section we will briefly introduce
+the topology of our toy-ish neural network, its building blocks and see how
+these can be trained using gradient descent.
+
+### Topology of a neural network
+
+In this blog post, we will only focus on fully-connected neural networks. There
+are tons of different variations and architectures out there that are much more
+sophisticated than our examples in this blog post. However, even though the
+training may be more complicated, the key principles are the same. Therefore, we
+will stick with a simple fully-connected architecture.
+
+A fully connected neural network with two hidden layers might look something
+like the following.
+
+<Image
+  src="/media/blog/understanding-gradient-descent/fully-connected-topology.png"
+  alt="Figure 8. Topology of a fully-connected network."
+/>
+
+The left-most layer is the input layer and the right-most layer is the output
+layer. In other words, we have 4-dimensional inputs and we want 2-dimensional
+outputs, for example, for classification purposes (e.g. cat or dog). The layers
+in the middle are the hidden layers.
+
+### Batch training
+
+Usually when we are training the network, we are not passing the entire dataset
+at once through the network but we use multiple batches. This approach is
+usually called Stochastic Gradient Descent (SGD) where we select a random subset
+of the samples and use only that subset to make the optimization step.
+
+<p>
+  I'm not going into detail of SGD but the important part is to understand that
+  we will have <Latex>m</Latex> samples with <Latex>n</Latex> features each.
+  Every computation in our neural network will be applied to this{" "}
+  <Latex>m</Latex>-by-<Latex>n</Latex> matrix of input samples.
+</p>
+
+> Note: The math will be written for only a single sample and not a batch of
+> samples. However, our implementation will work on batches.
+
+### Building Blocks
+
+This section will zoom in to a single block from Figure 8 and describe what it
+is composed of. A visualisation of a single block can be seen below.
+
+<Image
+  src="/media/blog/understanding-gradient-descent/linear-layer.png"
+  alt="Figure 9. A single block of a fully-connected neural network."
+/>
+
+#### Linear Transformation
+
+<p>
+  The linear transformation is a simple operation that applies a weight to each
+  input and adds a bias term. This is similar to what we did before for the
+  line, however, now we are doing this in <Latex>n</Latex>-dimensional space
+  instead of 1-dimensional space.
+</p>
+
+Mathematically, the linear transformation can be formulated as
+
+<Latex block>{`z = W^T x + b`}</Latex>
+
+<p>
+  where <Latex>W</Latex> is the weight vector and <Latex>b</Latex> is the bias
+  term. We will need the gradient of the linear transformation for the
+  implementation, so let's calculate those as well.
+</p>
+
+<Latex block>{`\\frac{\\partial z}{\\partial x} = W`}</Latex>
+
+<Latex block>{`\\frac{\\partial z}{\\partial W} = x`}</Latex>
+
+<Latex block>{`\\frac{\\partial z}{\\partial b} = 1`}</Latex>
+
+Implementing the linear layer may look something like the following.
+
+```python:linear.py
+class Linear:
+  def __init__(self, in_features, out_features):
+    """
+    Args:
+      in_features  : Number of input features.
+      out_features : Number of output features.
+    """
+
+    bound = np.sqrt(6 / (in_features + out_features))
+
+    # Initialise the weights and biases
+    self.W = np.random.uniform(-bound, bound, (out_features, in_features))
+    self.b = np.random.uniform(-bound, bound, (out_features))
+
+    # Internal gradients for learning
+    self.dW = None
+    self.db = None
+
+  def forward(self, x, W = None, b = None):
+    """
+    Args:
+      x : Inputs of shape (batch_size, in_features).
+      W : Optional weights of shape (out_features, in_features).
+      b : Optional bias terms of shape (out_features).
+
+    Returns:
+      z : Outputs of shape (batch_size, out_features).
+    """
+
+    # Decide which weights and biases to use
+    _W = self.W if W is None else W
+    _b = self.b if b is None else b
+
+    # Keep for gradient
+    self.x = x
+
+    return x @ _W.T + _b.T
+
+  def backward(self, dy):
+    """
+    Args:
+      dy : Gradient of the loss w.r.t. 'y'.
+           Shape of (batch_size, out_features).
+
+    Returns:
+      dx : Gradient of the loss w.r.t. 'x'.
+           Shape of (batch_size, in_features).
+    """
+
+    # Compute the internal gradients
+    self.dW = dy.T @ self.x
+    self.db = np.sum(dy.T, axis=1)
+
+    return dy @ self.W
+```
+
+#### Activation function
+
+The activation function's job is to apply a non-linearity to the output of the
+node. There are multiple possible activation functions that are widely used but
+we will focus on probably the simplest one called ReLU.
+
+The proof for the reason why we even need an activation function is left out on
+purpose as it's not relevant to the topic of this blog post. But to summarize, a
+combination of linear functions is still a linear function and therefore our
+neural network would not be able to learn any kind of non-linear functions,
+making the network quite unusable.
+
+ReLU is defined as
+
+<Latex block>{`y = max(0, z)`}</Latex>
+
+and its derivative is simply
+
+<Latex block>
+  {`
+  \\frac{\\partial y}{\\partial z} =
+    \\begin{cases}
+      0 &\\text{if } z < 0 \\\\
+      1 &\\text{if } z > 0
+    \\end{cases}
+  `}
+</Latex>
+
+Implementing ReLU in Python could look something like the following.
+
+```python:relu.py
+class ReLU:
+  def forward(self, z):
+    """
+    Args:
+      z : Output from the previous layer.
+          Shape of (batch_size, features).
+
+    Returns:
+      y : Input after the activation function.
+          Shape of (batch_size, features).
+    """
+
+    # Note: Keep for gradients
+    self.z = z
+
+    return np.maximum(z, np.zeros(z.shape))
+
+  def backward(self, dy):
+    """
+    Args:
+      dy : Gradient of the loss w.r.t. 'y'.
+           Shape of (batch_size, features).
+
+    Returns:
+      dz : Gradient of the loss w.r.t. 'z'.
+           Shape of (batch_size, features).
+    """
+
+    return np.where(
+      self.z > 0,
+      np.ones(self.z.shape),
+      np.zeros(self.z.shape)
+    ) * dy
+```
+
+#### Loss function
+
+For our toy data, we will use the same MSE loss as we used previously for linear
+regression.
+
+As a reminder, MSE loss was defined as
+
+<Latex block>{`c = \\frac{1}{n} \\sum_{i = 1}^{n} (y_i - \\hat{y_i})^2`}</Latex>
+
+<p>
+  and its gradient w.r.t. <Latex>y</Latex> is defined as
+</p>
+
+<Latex block>
+  {`
+  \\begin{aligned}
+    \\frac{\\partial}{\\partial y} c
+        & = \\frac{\\partial}{\\partial y} \\frac{1}{n} \\sum_{i = 1}^{n} (y_i - \\hat{y_i})^2 \\\\
+        & = \\frac{1}{n} \\sum_{i = 1}^{n} \\frac{\\partial}{\\partial y} (y_i - \\hat{y_i})^2 \\\\
+        & = \\frac{1}{n} \\sum_{i = 1}^{n} 2 (y_i - \\hat{y_i}) \\\\
+        & = \\frac{2}{n} \\sum_{i = 1}^{n} (y_i - \\hat{y_i})
+  \\end{aligned}
+  `}
+</Latex>
+
+The implementation of MSE loss could look something like the following.
+
+```python:mse-loss.py
+class MSELoss:
+  def forward(self, y, target):
+    """
+    Computes the MSE loss of each entry in the batch.
+
+    Args:
+      y      : The actual output from the neural network.
+               Shape of (batch_size, out_features).
+      target : The target output.
+               Shape of (batch_size, out_features).
+
+    Returns:
+      c : The loss of each entry in the batch.
+          Shape of (batch_size, 1).
+    """
+
+    # Note: Keep the differences for the gradient computation
+    self.diff = y - target
+
+    return np.sum(np.square(self.diff)) / self.diff.size
+
+  def backward(self):
+    """
+    Computes the gradient of the loss w.r.t. 'y'.
+
+    Returns:
+      dy : The gradient of the loss w.r.t. 'y'.
+           Shape of (batch_size, out_features).
+    """
+
+    return 2 / self.diff.size * self.diff
+```
+
+### Composition
+
+Now that we have the components ready, we need to compose these into a network.
+This can be done by implementing a new class, `MLP`.
+
+```python:mlp.py
+class MLP:
+  def __init__(self, name, in_features, hidden_sizes, out_features, activation_fn):
+    """
+    Args:
+      name          : Name of the network.
+      in_features   : Number of input features.
+      hidden_sizes  : An array of hidden layer sizes.
+      out_features  : Number of output features.
+      activation_fn : Activation function to use for each layer.
+    """
+
+    self.name = name
+
+    # Initialise the first hidden layer
+    self.modules = [
+      Linear(in_features, hidden_sizes[0]),
+      activation_fn()
+    ]
+
+    # Initialise the rest of the hidden layers
+    for i in range(len(hidden_sizes) - 1):
+      self.modules.append(Linear(hidden_sizes[i], hidden_sizes[i + 1]))
+      self.modules.append(activation_fn())
+
+    # Initialise the output layer
+    self.modules.append(Linear(hidden_sizes[-1], out_features))
+
+  def forward(self, x):
+    """
+    Do the forward pass.
+
+    Args:
+      x : Inputs of shape (batch_size, in_features).
+
+    Returns:
+      y : Outputs of shape (batch_size, out_features).
+    """
+
+    y = x
+
+    for layer in self.modules:
+      y = layer.forward(y)
+
+    return y
+
+  def backward(self, dy):
+    """
+    Do the backward pass.
+
+    Args:
+      dy : Gradient of the loss w.r.t. 'y'.
+           Shape of (batch_size, out_features).
+
+    Returns:
+      dx : Gradient of the loss w.r.t. 'x'.
+           Shape of (batch_size, in_features).
+    """
+
+    dx = dy
+
+    for i in range(len(self.modules) - 1, -1, -1):
+      dx = self.modules[i].backward(dx)
+
+    return dx
+```
+
+### Training
+
+Remember the chain rule I mentioned before? Great, that's going to be very
+useful now. Let's start from a single block in our neural network. After
+combining the linear and activation function steps from above, it is defined as
+
+<Latex block>{`y = max(0, W^T x + b)`}</Latex>
+
+The chain rule stated that we can split the derivative into two separate steps
+and multiply them by each other. Let's see how that works in our case.
+
+<Latex block>
+  {`
+  \\frac{\\partial y}{\\partial x} = \\frac{\\partial y}{\\partial z} \\cdot \\frac{\\partial z}{\\partial x}
+                                   = \\begin{cases}
+                                       0 &\\text{if } z < 0 \\\\
+                                       W &\\text{if } z > 0
+                                     \\end{cases}
+  `}
+</Latex>
+
+We now have a way to calculate the derivative of a single block's output w.r.t.
+its inputs in our neural network. However, we are really interested in computing
+the loss function's derivative w.r.t. the inputs of the entire network.
+
+This is where the chain rule comes in the second time. The network can basically
+be represented as nested functions that can use the chain rule to compute the
+gradient.
+
+<Latex block>{`y = l_3(l_2(l_1(x)))`}</Latex>
+
+The gradient can then be computed by using the chain rule in the following way.
+
+<Latex block>
+  {`
+  \\frac{\\partial y}{\\partial x} =
+    \\frac{\\partial y}{\\partial l_2(l_1(x))} \\cdot
+    \\frac{\\partial l_2(l_1(x))}{\\partial l_1(x)} \\cdot
+    \\frac{\\partial l_1(x)}{\\partial x}
+  `}
+</Latex>
+
+Using the chain rule enables us to implement each layer as their own block which
+will just receive the gradient of the loss w.r.t. the layer's output and will
+produces the gradient of the loss w.r.t. the layer's input.
+
+In practice, the training progresses in three phases:
+
+1. Forward pass where we pass a batch of inputs through the network.
+2. Backward pass where we propagate the gradient from the output to the input.
+3. Optimization step where we tweak the parameters based on the gradients.
+
+Let's write the code for this.
+
+```python:training-loop.py
+def generate_toy_data(n, plot = False):
+  # First, let's generate a random set of x values
+  x = np.sort(np.random.randn(n, 1), axis=0)
+
+  # Let's compute the targets (with Gaussian noise)
+  targets = np.sin(x * np.pi / 2) + 0.3 * np.random.randn(n, 1)
+
+  if plot:
+    plt.scatter(x, targets, s=10)
+
+  return x, targets
+
+def train_toy_network(activation_fn, epochs = 250):
+  # Define our data
+  x, targets = generate_toy_data(128)
+
+  # Define parameters for training
+  learning_rate = 0.075
+
+  # Define our network and loss
+  net = MLP("toy", 1, [20, 20], 1, activation_fn)
+  loss = MSELoss()
+
+  # Define the outputs after each epoch
+  outputs = np.ndarray((epochs, x.size))
+
+  for i in range(epochs):
+    # Forward pass
+    y = net.forward(x)
+    c = loss.forward(y, targets)
+
+    # Backward pass
+    dy = loss.backward()
+    dx = net.backward(dy)
+
+    # Gradient descent update
+    learning_rate *= 0.998
+
+    for module in net.modules:
+      if hasattr(module, 'W'):
+        module.W = module.W - module.dW * learning_rate
+        module.b = module.b - module.db * learning_rate
+
+    # Append the outputs
+    outputs[i, :] = net.forward(x).flatten()
+
+  return (x, targets), net, outputs
+```
+
+How does this look for our toy data? Let's see! I trained the network with both
+ReLU and Tanh activation function for the toy data set and the results look like
+the following.
+
+<Image
+  src="/media/blog/understanding-gradient-descent/toy-network-relu.gif"
+  alt="Figure 10. Animation of gradient descent with ReLU."
+/>
+
+<Image
+  src="/media/blog/understanding-gradient-descent/toy-network-tanh.gif"
+  alt="Figure 11. Animation of gradient descent with Tanh."
+/>
+
+It's interesting to see what the activation functions are doing here. With ReLU,
+we get a non-linear function but it seems to be composed of lines. This make
+sense as ReLU is either the identity function or it cuts off the output
+completely. On the other hand, Tanh seems much smoother and it fits our
+sinusoidal data better.
+
+## MNIST dataset
+
+Finally, we will train this network for the very well known MNIST dataset. First
+things first, you can try the trained network by drawing numbers (try drawing a
+"2") on the canvas below.
+
+<MNISTCanvas width={450} height={450} />
+
+> Note: This type of fully-connected networks are definitely not the best
+> architecture for image classification! However, I wanted to try how well it
+> would perform.
+
+I won't be writing the additional code for the MNIST dataset here but you can
+check it out from the linked repository yourself.
+
+You can see by trying the network that it can be ery confident on the numbers
+but it still gets confused very easily. Fully-connected neural networks are not
+the best solution for image classification but we could use something like
+convolutional layers before this to "preprocess" the images. However, they are
+not in the scope of this blog post and will be left for an upcoming article.
+
+## References
+
+Work in progress...

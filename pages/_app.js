@@ -4,24 +4,26 @@
  * https://nextjs.org/docs/advanced-features/custom-app
  */
 
-import React from "react";
-import App from "next/app";
-import Head from "next/head";
-import Typography from "typography";
-import { Global, css } from "@emotion/core";
-import { ThemeProvider } from "emotion-theming";
+import "../src/theme/code/github.css"
 
-import theme from "../src/theme";
+import React from "react"
+import App from "next/app"
+import Head from "next/head"
+import Typography from "typography"
+import { Global, css } from "@emotion/core"
+import { ThemeProvider } from "emotion-theming"
+
+import theme from "../src/theme"
 
 const typography = new Typography({
   ...theme.typography,
-  includeNormalize: true,
-});
+  includeNormalize: false,
+})
 
 class MyApp extends App {
   render() {
-    const { Component, pageProps } = this.props;
-    const getLayout = Component.getLayout || ((_) => _);
+    const { Component, pageProps } = this.props
+    const getLayout = Component.getLayout || ((_) => _)
 
     return (
       <ThemeProvider theme={theme}>
@@ -37,7 +39,7 @@ class MyApp extends App {
 
         {getLayout(<Component {...pageProps} />, pageProps)}
       </ThemeProvider>
-    );
+    )
   }
 
   _renderMeta() {
@@ -51,11 +53,11 @@ class MyApp extends App {
           content="I’m a detail-oriented software engineer with a passion for building high-quality solutions for real-world problems. Quality, impact and user experience are the aspects I consider to be the most important."
         />
       </>
-    );
+    )
   }
 
   _renderFavicon() {
-    return <>{/* TODO: add favicon */}</>;
+    return <>{/* TODO: add favicon */}</>
   }
 
   _renderTypography() {
@@ -83,7 +85,7 @@ class MyApp extends App {
             />
           )}
       </>
-    );
+    )
   }
 
   _renderGlobalStyles() {
@@ -96,8 +98,8 @@ class MyApp extends App {
           }
         `}
       />
-    );
+    )
   }
 }
 
-export default MyApp;
+export default MyApp
